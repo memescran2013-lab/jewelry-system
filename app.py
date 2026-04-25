@@ -67,12 +67,46 @@ if uploaded_file:
         )
 
         # واتساب
-        st.subheader("📱 إرسال تقرير سريع")
-        phone = st.text_input("رقم الواتساب (بمفتاح الدولة مثلا 2010...)")
-        if st.button("تجهيز رسالة الواتساب"):
-            msg = f"تقرير المصنع: عدد الموديلات المطلوب إنتاجها فوراً هو {len(critical_low)} موديل."
-            whatsapp_url = f"https://wa.me/{phone}?text={msg}"
-            st.write(f"[اضغط هنا لفتح واتساب وإرسال التقرير]({whatsapp_url})")
+       # --- جزء الواتساب المطور (دفتر عناوين) ---
+        st.divider()
+        st.subheader("📱 إرسال الطلبية لجهات الاتصال")
+
+        # قائمة بأسماء وأرقام ثابتة (تقدر تغير الأسماء والأرقام دي براحتك هنا)
+        contacts = {
+            "محمود رضا": "201002928684",
+            "احمد محمود": "201234567890",
+            "ورشة الإنتاج": "201122334455",
+            "إضافة رقم آخر": "custom"
+        }
+
+        # اختيار الشخص من القائمة
+        selected_contact = st.selectbox("اختر الشخص المراد الإرسال إليه:", list(contacts.keys()))
+
+        # لو اختار "رقم آخر" يظهر له مكان يكتب فيه الرقم
+        if contacts[selected_contact] == "custom":
+            target_phone = st.text_input("اكتب الرقم الجديد (بمفتاح الدولة مثلاً 2010...):")
+        else:
+            target_phone = contacts[selected_contact]
+            st.info(f"سيتم الإرسال إلى رقم: {target_phone}")
+
+        if st.button("إرسال التقرير الآن"):
+            if target_phone:
+                # تجهيز الرسالة
+                msg = f"تقرير طلبية إنتاج - New Egypt Gold\n"
+                msg += f"---------------------------\n"
+                msg += f"✅ إجمالي الموديلات: {len(df)}\n"
+                msg += f"⚠️ موديلات عجز (إنتاج عاجل): {len(critical_low)}\n"
+                msg += f"📦 موديلات مخزون زائد: {len(overstock)}\n"
+                msg += f"---------------------------\n"
+                msg += f"يرجى مراجعة ملف الإكسيل المرفق."
+
+                import urllib.parse
+                encoded_msg = urllib.parse.quote(msg)
+                whatsapp_url = f"https://wa.me/{target_phone}?text={encoded_msg}"
+                
+                st.markdown(f"### [✅ اضغط هنا لفتح الواتساب والإرسال]({whatsapp_url})")
+            else:
+                st.warning("برجاء التأكد من كتابة الرقم أولاً.")
             
     else:
         st.error(f"تأكد أن ملف الإكسيل يحتوي على الأعمدة: {required_columns}")
