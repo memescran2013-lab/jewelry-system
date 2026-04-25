@@ -3,86 +3,90 @@ import pandas as pd
 import io
 import urllib.parse
 
-# إعدادات الصفحة بشعار "نيو إيجيبت جولد"
-st.set_page_config(page_title="نظام الإنتاج - New Egypt Gold", layout="wide")
+# إعدادات الصفحة
+st.set_page_config(page_title="سيستم نيو إيجيبت جولد - التخطيط الشامل", layout="wide")
 
-st.title("🏭 نظام تحليل الماستر داتا وإدارة طلبات الإنتاج")
-st.info("ارفع ملف الإكسيل الخاص بك، وحدد الأعمدة المطلوبة لبدء الحسابات التلقائية.")
+st.title("🏭 نظام التخطيط المتكامل (ماستر داتا)")
+st.write("التحليل بناءً على مبيعات الفروع، المخزون، وحالة الإنتاج بالمصنع.")
 
 # رفع الملف
-uploaded_file = st.file_uploader("اختر ملف الماستر داتا (Excel)", type=['xlsx'])
+uploaded_file = st.file_uploader("ارفع ملف الإكسيل الأخير", type=['xlsx'])
 
 if uploaded_file:
     try:
-        # قراءة البيانات ومعالجة الأسماء المتكررة
+        # قراءة البيانات
         df = pd.read_excel(uploaded_file)
-        df.columns = [str(c).strip() for c in df.columns]
-        all_cols = list(df.columns)
-        
-        st.success("✅ تم رفع الملف بنجاح")
-        
-        # واجهة اختيار الأعمدة (عشان يشتغل على أي ملف)
-        st.subheader("⚙️ إعدادات الربط مع الماستر داتا")
-        col1, col2, col3 = st.columns(3)
-        
-        with col1:
-            sales_col = st.selectbox("حدد عمود (المبيعات):", all_cols)
-        with col2:
-            stock_col = st.selectbox("حدد عمود (المخزون/الرصيد):", all_cols)
-        with col3:
-            name_col = st.selectbox("حدد عمود (اسم الصنف):", all_cols)
+        df.columns = [str(c).strip() for c in df.columns] # تنظيف الأسماء
 
-        # زر التشغيل
-        if st.button("🚀 تشغيل التحليل وحساب 'ط جديد'"):
+        # --- تعريف الأعمدة بناءً على ملفك الأخير ---
+        # المسميات في ملفك: SKU, ItemName, طلب الفروع, تحت التشغيل كمية, مبيعات, رصيد
+        
+        col_map = {
+            'sku': 'SKU',
+            'name': 'ItemName',
+            'branch_order': 'طلب الفروع',
+            'wip': 'تحت التشغيل كمية',
+            'sales': 'مبيعات',
+            'stock': 'رصيد'
+        }
+
+        # التأكد من وجود الأعمدة أو السماح للمستخدم باختيار البديل
+        st.sidebar.header("⚙️ ضبط الربط")
+        actual_cols = {}
+        for key, default in col_map.items():
+            actual_cols[key] = st.sidebar.selectbox(f"حدد عمود {default}:", df.columns, index=list(df.columns).index(default) if default in df.columns else 0)
+
+        if st.button("📊 تشغيل التحليل المجمع"):
             # تحويل البيانات لأرقام
-            df[sales_col] = pd.to_numeric(df[sales_col], errors='coerce').fillna(0)
-            df[stock_col] = pd.to_numeric(df[stock_col], errors='coerce').fillna(0)
-            
-            # --- المنهجية الاحترافية ---
-            # حساب "ط جديد" (الكمية المطلوبة)
-            df['ط جديد'] = (df[sales_col] - df[stock_col]).clip(lower=0)
-            
-            # تحديد الحالة
-            def get_status(row):
-                if row[stock_col] < (0.2 * row[sales_col]): return '⚠️ طلب إنتاج عاجل'
-                elif row[stock_col] > (2.0 * row[sales_col]): return '🧊 مخزون زائد'
-                return '✅ مستقر'
-            
-            df['الحالة'] = df.apply(get_status, axis=1)
+            for key in ['branch_order', 'wip', 'sales', 'stock']:
+                df[actual_cols[key]] = pd.to_numeric(df[actual_cols[key]], errors='coerce').fillna(0)
 
-            # عرض المؤشرات
-            critical = df[df['الحالة'] == '⚠️ طلب إنتاج عاجل']
-            c1, c2, c3 = st.columns(3)
-            c1.metric("إجمالي الأصناف", len(df))
-            c2.metric("أصناف تحتاج إنتاج", len(critical))
-            c3.metric("إجمالي قطع 'ط جديد'", int(df['ط جديد'].sum()))
+            # --- معادلة القرار الموثوقة ---
+            # صافي المطلوب = (طلب الفروع) - (الرصيد الحالي + اللي تحت التشغيل في المصنع)
+            df['إجمالي المتوفر'] = df[actual_cols['stock']] + df[actual_cols['wip']]
+            df['القرار (ط جديد)'] = (df[actual_cols['branch_order']] - df['إجمالي المتوفر']).clip(lower=0)
+            
+            # تحليل حركة الصنف (سريع / راكد)
+            def get_movement(row):
+                if row[actual_cols['sales']] > row[actual_cols['stock']]: return "🔥 سريع جداً"
+                if row[actual_cols['sales']] == 0: return "🧊 راكد"
+                return "✅ مستقر"
+            
+            df['حركة الموديل'] = df.apply(get_movement, axis=1)
+
+            # عرض النتائج
+            st.success("✅ تم بناء الخطة بناءً على أرصدة الفروع والمصنع")
+            
+            m1, m2, m3, m4 = st.columns(4)
+            m1.metric("إجمالي قطع 'ط جديد'", int(df['القرار (ط جديد)'].sum()))
+            m2.metric("أصناف تحت التشغيل", int(df[actual_cols['wip']].sum()))
+            m3.metric("موديلات مطلوبة فوراً", len(df[df['القرار (ط جديد)'] > 0]))
+            m4.metric("موديلات سريعة البيع", len(df[df['حركة الموديل'] == "🔥 سريع جداً"]))
 
             st.divider()
-            
-            # عرض الجدول بنفس مسمياتك الأصلية + الأعمدة الجديدة
-            st.subheader("📋 تقرير الماستر داتا المحدث")
-            st.dataframe(df, use_container_width=True)
 
-            # تصدير الملف بنفس الهيكل
-            buffer = io.BytesIO()
-            with pd.ExcelWriter(buffer, engine='xlsxwriter') as writer:
-                df.to_excel(writer, index=False, sheet_name='Production_Plan')
+            # عرض الجدول بالبيانات المختصرة والمهمة
+            st.subheader("📋 تقرير التخطيط المقترح")
+            display_df = df[[actual_cols['sku'], actual_cols['name'], actual_cols['sales'], 
+                             actual_cols['stock'], actual_cols['wip'], actual_cols['branch_order'], 
+                             'القرار (ط جديد)', 'حركة الموديل']]
             
-            st.download_button(
-                label="📥 تحميل ملف الماستر داتا المحدث (Excel)",
-                data=buffer.getvalue(),
-                file_name="New_Egypt_Gold_MasterData.xlsx",
-                mime="application/vnd.ms-excel"
-            )
+            st.dataframe(display_df, use_container_width=True)
 
-            # نظام الواتساب
+            # تحميل الملف المعدل
+            output = io.BytesIO()
+            with pd.ExcelWriter(output, engine='xlsxwriter') as writer:
+                df.to_excel(writer, index=False, sheet_name='خطة الإنتاج')
+            
+            st.download_button("📥 تحميل التقرير النهائي (Excel)", output.getvalue(), 
+                               "New_Egypt_Gold_Final_Plan.xlsx", "application/vnd.ms-excel")
+
+            # واتساب
             st.divider()
-            st.subheader("📱 إرسال النتائج")
-            phone = st.text_input("اكتب رقم الواتساب (مثلاً 2010...):", "2010") # حط رقمك الافتراضي هنا
-            
-            if st.button("ارسل عبر واتساب"):
-                msg = f"تقرير نيو إيجيبت جولد:\n- أصناف عجز: {len(critical)}\n- إجمالي مطلوب: {int(df['ط جديد'].sum())} قطعة."
-                st.markdown(f"[✅ اضغط للإرسال](https://wa.me/{phone}?text={urllib.parse.quote(msg)})")
+            if st.button("📱 إرسال ملخص الطلبية للمدير"):
+                msg = f"تقرير نيو إيجيبت جولد:\n- إجمالي المطلوب: {int(df['القرار (ط جديد)'].sum())} قطعة.\n- تحت التشغيل بالمصنع: {int(df[actual_cols['wip']].sum())} قطعة.\n- الموديلات السريعة: {len(df[df['حركة الموديل']=='🔥 سريع جداً'])}"
+                link = f"https://wa.me/201012345678?text={urllib.parse.quote(msg)}"
+                st.markdown(f"### [✅ اضغط هنا للإرسال عبر واتساب]({link})")
 
     except Exception as e:
-        st.error(f"حدث خطأ: {e}")
+        st.error(f"حدث خطأ في قراءة الملف: {e}")
